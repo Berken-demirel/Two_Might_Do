@@ -40,7 +40,7 @@ def decay(epoch, steps=100):
 
 def inception_module_1(layer_in):
     conv1 = Conv1D(32, 4, padding='same', activation='relu', kernel_initializer='GlorotNormal',kernel_regularizer=l2(0.0002))(layer_in)
-    conv4 = Conv1D(32, 8, padding='same', activation='relu', kernel_initializer='GlorotNormal',kernel_regularizer=l2(0.0002))(layer_in)
+    conv4 = Conv1D(32, 16, padding='same', activation='relu', kernel_initializer='GlorotNormal',kernel_regularizer=l2(0.0002))(layer_in)
     layer_out = concatenate([conv1, conv4], axis=-1)
     x3 = BatchNormalization()(layer_out)
     return x3
@@ -103,7 +103,7 @@ def define_model(in_shape=(600, 1), out_shape=27):
     out_II = Lead_II_way(input_II)
     out_V5 = Lead_V5_way(input_V5)
     layer_out = concatenate([out_II, out_V5], axis=-1)
-    sep1 = SeparableConv1D(128, 2, activation='relu', kernel_initializer='GlorotNormal', padding='same',kernel_regularizer=l2(0.0002))(layer_out)
+    sep1 = SeparableConv1D(128, 4, activation='relu', kernel_initializer='GlorotNormal', padding='same',kernel_regularizer=l2(0.0002))(layer_out)
     flat = Flatten()(sep1)
     Dense_1 = Dense(128, activation='relu')(flat)
     layer_out = concatenate([Dense_bpm, Dense_1])
@@ -145,7 +145,7 @@ class_weights = assign_weigths(sum_26)
 
 model = define_model()
 
-checkpoint_filepath = 'Checkpoints_all_with_v1'
+checkpoint_filepath = 'Checkpoints_all_with_v2'
 model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_filepath, save_weights_only=False,
                                                                monitor='val_f1_score', mode='max', save_best_only=True)
 
@@ -158,6 +158,6 @@ where_am_I = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_f1_score', factor
 history = model.fit(x=[Xtrain_II, Xtrain_V5, bpm_data_train], y=y_train, epochs=900, batch_size=250, verbose=1, validation_data=([xval_II, xval_V5, bpm_data_val], y_val), class_weight=class_weights, callbacks=[model_checkpoint_callback, stop_me, where_am_I])
 
 hist_df = pd.DataFrame(history.history)
-pd.DataFrame.from_dict(history.history).to_csv('all_with_v1.csv', index=False)
+pd.DataFrame.from_dict(history.history).to_csv('all_with_v2.csv', index=False)
     
 model.save(checkpoint_filepath)
