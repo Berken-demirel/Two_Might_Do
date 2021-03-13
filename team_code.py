@@ -51,9 +51,15 @@ def training_code(data_directory, model_directory):
                      '164947007', '111975006', '164917005', '47665007', '59118001', '427393009',
                      '426177001', '426783006', '427084000', '63593006', '164934002', '59931005', '17338001']
 
+    my_scored_labels = ['270492004', '164889003', '164890007', '426627000', '713427006', '713426002', '445118002',
+                     '39732003',
+                     '164909002', '251146004', '698252002', '10370003', '284470004', '427172004',
+                     '164947007', '111975006', '164917005', '47665007', '427393009',
+                     '426177001', '426783006', '427084000', '164934002', '59931005']
+
     # dict that maps labels to integers, and the reverse
     labels_map = {scored_labels[i]: i for i in range(len(scored_labels))}
-    inv_labels_map = {i: scored_labels[i] for i in range(len(scored_labels))}
+    my_labels = {my_scored_labels[i]: i for i in range(len(my_scored_labels))}
 
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
@@ -68,7 +74,7 @@ def training_code(data_directory, model_directory):
         true_labels = list(set(scored_labels) & set(current_labels))
         if len(true_labels) != 0:
             processed_1, bpm_feat = get_features_2(header, recording, ['II', 'V5'])
-            encoded_label = one_hot_encode(true_labels, labels_map)
+            encoded_label = one_hot_encode(true_labels, labels_map, my_labels)
             for x in range(len(processed_1)):
                 if len(processed_1[x]) == 550:
                     training_list.append(processed_1[x])
@@ -234,13 +240,13 @@ def run_model2(model, header, recording):
 
     row_index = np.sum(probabilities1,axis=0).argmax()
     probabilities2 = np.sum(probabilities1,axis=0) / np.sum(probabilities1,axis=0)[row_index]
-    probabilities3 = np.round(probabilities2,3)
     label1[label1 > 0.5] = 1
     label1[label1 <= 0.5] = 0
     label1 = np.sum(label1,axis=0)
-    a = np.zeros(27)
+    a = np.zeros(24)
     a[np.argwhere(label1 == np.amax(label1))] = 1
-    a1 = np.asarray(a, dtype=int)
+    label1, probabilities3 = convert_to_real_labels(a, np.round(probabilities2, 3))
+    a1 = np.asarray(label1, dtype=int)
 
     return scored_labels, a1, probabilities3
 
@@ -296,14 +302,39 @@ def butter_bandpass_filter(data,freq):
     y = sosfiltfilt(sos, data)
     return y
 
-def one_hot_encode(tags, mapping):
+def one_hot_encode(tags, mapping, my_labels):
     # create empty vector
     encoding = np.zeros(len(mapping), dtype='uint8')
+    my_encoding = np.zeros(len(my_labels), dtype='uint8')
     # mark 1 for each tag in the vector
+    # for tag in tags:
+    #     encoding[mapping[tag]] = 1
     for tag in tags:
-        encoding[mapping[tag]] = 1
-    return encoding
+        if '59118001' in tag:
+            tag = '713427006'
+        if '63593006' in tag:
+            tag = '284470004'
+        if '17338001' in tag:
+            tag = '427172004'
+        my_encoding[my_labels[tag]] = 1
+    return my_encoding
 
+def convert_to_real_labels(labels, probs):
+    probs_to_return = np.zeros(27)
+    labels_to_return = np.zeros(27)
+    probs_to_return[0:18] = probs[0:18]
+    labels_to_return[0:18] = labels[0:18]
+    probs_to_return[18] = probs[4]
+    labels_to_return[18] = labels[4]
+    probs_to_return[19:23] = probs[18:22]
+    labels_to_return[19:23] = labels[18:22]
+    probs_to_return[23] = probs[12]
+    labels_to_return[23] = labels[12]
+    probs_to_return[24:26] = probs[22:24]
+    labels_to_return[24:26] = labels[22:24]
+    probs_to_return[26] = probs[13]
+    labels_to_return[26] = labels[13]
+    return labels_to_return, probs_to_return
 
 def inception_module_1(layer_in):
     conv1 = Conv1D(16, 1, padding='same', activation='relu', kernel_initializer='GlorotNormal',
