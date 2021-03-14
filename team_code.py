@@ -233,18 +233,14 @@ def run_model2(model, header, recording):
     a1 = a[:,0:275]
     a2 = a[:,275:]
     try:
-        label1 = classifier.predict([a1,a2, bpm_data])
         probabilities1 = classifier.predict([a1,a2, bpm_data])
     except ValueError:
         return scored_labels, np.array([1]), np.array([0.6])
 
     row_index = np.sum(probabilities1,axis=0).argmax()
     probabilities2 = np.sum(probabilities1,axis=0) / np.sum(probabilities1,axis=0)[row_index]
-    label1[label1 > 0.5] = 1
-    label1[label1 <= 0.5] = 0
-    label1 = np.sum(label1,axis=0)
     a = np.zeros(24)
-    a[np.argwhere(label1 == np.amax(label1))] = 1
+    a[np.argwhere(probabilities2 > 0.5)] = 1
     label1, probabilities3 = convert_to_real_labels(a, np.round(probabilities2, 3))
     a1 = np.asarray(label1, dtype=int)
 
@@ -259,28 +255,22 @@ def run_model(model, header, recording):
     leads = ['II']
     classifier = model
 
-    # Load features.
-    num_leads = len(leads)
     splitted, bpm_features = get_features(header, recording, leads)
     bpm_data = np.zeros((len(splitted), 6))
     for i in range(len(splitted)):
         bpm_data[i, :] = bpm_features[0:6]
 
     try:
-        label1 = classifier.predict([splitted.reshape(len(splitted), 300, 1), bpm_data])
-        probabilities1 = classifier.predict([splitted.reshape(len(splitted), 300, 1), bpm_data])
+        probabilities1 = classifier.predict([splitted.reshape(len(splitted), 275, 1), bpm_data])
     except ValueError:
         return scored_labels, np.array([1]), np.array([0.6])
 
-    row_index = math.floor(probabilities1.argmax()/len(probabilities1[0]))
-    probabilities2 = probabilities1[row_index]
-    probabilities3 = np.round(probabilities2,3)
-    label1[label1 > 0.5] = 1
-    label1[label1 <= 0.5] = 0
-    label1 = np.sum(label1,axis=0)
-    a = np.zeros(27)
-    a[np.argwhere(label1 == np.amax(label1))] = 1
-    a1 = np.asarray(a, dtype=int)
+    row_index = np.sum(probabilities1,axis=0).argmax()
+    probabilities2 = np.sum(probabilities1,axis=0) / np.sum(probabilities1,axis=0)[row_index]
+    a = np.zeros(24)
+    a[np.argwhere(probabilities2 > 0.5)] = 1
+    label1, probabilities3 = convert_to_real_labels(a, np.round(probabilities2, 3))
+    a1 = np.asarray(label1, dtype=int)
 
     return scored_labels, a1, probabilities3
 
@@ -303,12 +293,7 @@ def butter_bandpass_filter(data,freq):
     return y
 
 def one_hot_encode(tags, mapping, my_labels):
-    # create empty vector
-    encoding = np.zeros(len(mapping), dtype='uint8')
     my_encoding = np.zeros(len(my_labels), dtype='uint8')
-    # mark 1 for each tag in the vector
-    # for tag in tags:
-    #     encoding[mapping[tag]] = 1
     for tag in tags:
         if '59118001' in tag:
             tag = '713427006'
@@ -336,14 +321,6 @@ def convert_to_real_labels(labels, probs):
     labels_to_return[26] = labels[13]
     return labels_to_return, probs_to_return
 
-def inception_module_1(layer_in):
-    conv1 = Conv1D(16, 1, padding='same', activation='relu', kernel_initializer='GlorotNormal',
-                   kernel_regularizer=l2(0.0002))(layer_in)
-    conv4 = Conv1D(16, 4, padding='same', activation='relu', kernel_initializer='GlorotNormal',
-                   kernel_regularizer=l2(0.0002))(layer_in)
-    layer_out = concatenate([conv1, conv4], axis=-1)
-    return layer_out
-
 def assign_weigths(sums):
     if np.count_nonzero(sums) != 27:
         sums[np.where(sums == 0)[0]] = 1
@@ -354,33 +331,6 @@ def assign_weigths(sums):
         weights_dict.__setitem__(i, sums_div[i] / 27)
     return weights_dict
 
-
-def res_net_block1(input_data, filters, conv_size):
-    x = Conv1D(filters, conv_size, activation='relu', padding='same', kernel_regularizer=l2(0.0002))(input_data)
-    x = BatchNormalization()(x)
-    x = Conv1D(filters, conv_size, activation=None, padding='same', kernel_regularizer=l2(0.0002))(x)
-    x = BatchNormalization()(x)
-    x = Add()([x, input_data])
-    x = Activation('relu')(x)
-    return x
-
-
-def res_net_block_trans(input_data, filters, conv_size):
-    input_trans = Conv1D(filters, 1, activation='relu', padding='same', kernel_regularizer=l2(0.0002))(input_data)
-    x0 = Conv1D(filters, conv_size, activation='relu', padding='same', kernel_regularizer=l2(0.0002))(input_data)
-    x1 = BatchNormalization()(x0)
-    x2 = Conv1D(filters, conv_size, activation=None, padding='same', kernel_regularizer=l2(0.0002))(x1)
-    x3 = BatchNormalization()(x2)
-    x4 = Add()([x3, input_trans])
-    x = Activation('relu')(x4)
-    return x
-
-def bpm_dense(bpm_input):
-    flat = Flatten()(bpm_input)
-    Dense_bpm1 = Dense(8, activation="relu")(flat)
-    Dense_bpm2 = Dense(16, activation="relu")(Dense_bpm1)
-    Dense_bpm3 = Dense(32, activation="relu")(Dense_bpm2)
-    return Dense_bpm3
 
 def define_model(in_shape=(300, 1), out_shape=27):
     inputA = Input(shape=(300,1))
@@ -404,29 +354,93 @@ def define_model(in_shape=(300, 1), out_shape=27):
     BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['accuracy', 'Recall',tfa.metrics.F1Score(num_classes=27,threshold=0.5,average='macro')])
     return BerkenLeNet
 
-def define_model2(in_shape=(600, 1), out_shape=27):
-    inputA = Input(shape=(600,1))
-    inputB = Input(shape=(6,1))
-    Dense_bpm = bpm_dense(inputB)
-    layer_out = Conv1D(32, 8, activation='relu', kernel_initializer='GlorotNormal', padding='same',kernel_regularizer=l2(0.0002))(inputA)
+
+def inception_module_1(layer_in):
+    conv1 = Conv1D(32, 4, padding='same', activation='relu', kernel_initializer='GlorotNormal',
+                   kernel_regularizer=l2(0.0002))(layer_in)
+    conv4 = Conv1D(32, 16, padding='same', activation='relu', kernel_initializer='GlorotNormal',
+                   kernel_regularizer=l2(0.0002))(layer_in)
+    layer_out = concatenate([conv1, conv4], axis=-1)
+    x3 = BatchNormalization()(layer_out)
+    return x3
+
+
+def res_net_block1(input_data, filters, conv_size):
+    x = Conv1D(filters, conv_size, activation='relu', padding='same', kernel_regularizer=l2(0.0002))(input_data)
+    x = BatchNormalization()(x)
+    x = Conv1D(filters, conv_size, activation=None, padding='same', kernel_regularizer=l2(0.0002))(x)
+    x = BatchNormalization()(x)
+    x = Add()([x, input_data])
+    x = Activation('relu')(x)
+    return x
+
+
+def res_net_block_trans(input_data, filters, conv_size):
+    input_trans = Conv1D(filters, 1, activation='relu', padding='same', kernel_regularizer=l2(0.0002))(input_data)
+    x0 = Conv1D(filters, conv_size, activation='relu', padding='same', kernel_regularizer=l2(0.0002))(input_data)
+    x1 = BatchNormalization()(x0)
+    x2 = Conv1D(filters, conv_size, activation=None, padding='same', kernel_regularizer=l2(0.0002))(x1)
+    x3 = BatchNormalization()(x2)
+    x4 = Add()([x3, input_trans])
+    x = Activation('relu')(x4)
+    return x
+
+
+def bpm_dense(bpm_input):
+    flat = Flatten()(bpm_input)
+    Dense_bpm1 = Dense(8, activation="relu")(flat)
+    Dense_bpm2 = Dense(16, activation="relu")(Dense_bpm1)
+    Dense_bpm3 = Dense(32, activation="relu")(Dense_bpm2)
+    return Dense_bpm3
+
+
+def Lead_II_way(lead_II):
+    layer_out = Conv1D(32, 8, activation='relu', kernel_initializer='GlorotNormal', padding='same',
+                       kernel_regularizer=l2(0.0002))(lead_II)
     Batch1 = BatchNormalization()(layer_out)
     layer_out_0 = res_net_block_trans(Batch1, 32, 4)
     Pool1 = AveragePooling1D(2, padding='same')(layer_out_0)
     Incept_1 = inception_module_1(Pool1)
     res2 = res_net_block_trans(Incept_1, 64, 2)
-    res3 = res_net_block_trans(res2, 64, 2)
-    Pool2 = AveragePooling1D(2, padding='same')(res3)
-    flat_1 = Flatten()(Pool2)
-    Dense_1 = Dense(128, activation='relu', kernel_initializer='GlorotNormal')(flat_1)
+    Pool1 = AveragePooling1D(2, padding='same')(res2)
+    # flat = Flatten()(Pool1)
+    return Pool1
+
+
+def Lead_V5_way(lead_V5):
+    layer_out = Conv1D(32, 8, activation='relu', kernel_initializer='GlorotNormal', padding='same',
+                       kernel_regularizer=l2(0.0002))(lead_V5)
+    Batch1 = BatchNormalization()(layer_out)
+    layer_out_0 = res_net_block_trans(Batch1, 32, 4)
+    Pool1 = AveragePooling1D(2, padding='same')(layer_out_0)
+    Incept_1 = inception_module_1(Pool1)
+    res2 = res_net_block_trans(Incept_1, 64, 2)
+    Pool1 = AveragePooling1D(2, padding='same')(res2)
+    # flat = Flatten()(Pool1)
+    return Pool1
+
+
+def define_model2(in_shape=(600, 1), out_shape=24):
+    input_II = Input(shape=(275, 1))
+    input_V5 = Input(shape=(275, 1))
+    input_bpm = Input(shape=(6, 1))
+    Dense_bpm = bpm_dense(input_bpm)
+    out_II = Lead_II_way(input_II)
+    out_V5 = Lead_V5_way(input_V5)
+    layer_out = concatenate([out_II, out_V5], axis=-1)
+    sep1 = SeparableConv1D(128, 4, activation='relu', kernel_initializer='GlorotNormal', padding='same',
+                           kernel_regularizer=l2(0.0002))(layer_out)
+    flat = Flatten()(sep1)
+    Dense_1 = Dense(128, activation='relu')(flat)
     layer_out = concatenate([Dense_bpm, Dense_1])
     Dropout1 = Dropout(0.4)(layer_out)
     out = Dense(out_shape, activation='sigmoid')(Dropout1)
-    BerkenLeNet = Model(inputs=[inputA, inputB], outputs=out)
+    BerkenLeNet = Model(inputs=[input_II, input_V5, input_bpm], outputs=out)
     BerkenLeNet.summary()
     # compile model
     opt = Adam(learning_rate=0.0003)
-    #opt = SGD(lr=0.01, momentum=0.9, nesterov=False)
-    BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['Recall', 'accuracy',tfa.metrics.F1Score(num_classes=27, threshold=0.5, average='macro')])
+    # opt = SGD(lr=0.01, momentum=0.9, nesterov=False)
+    BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['Recall', 'accuracy', tfa.metrics.F1Score(num_classes=24, threshold=0.5, average='macro')])
     return BerkenLeNet
 
 def get_correlated_ones(templates):
