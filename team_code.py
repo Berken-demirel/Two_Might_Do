@@ -227,13 +227,14 @@ def run_model2(model, header, recording):
     a1 = a[:,0:275]
     a2 = a[:,275:]
     try:
-        label1 = classifier.predict([a1,a2, bpm_data])
+        # label1 = classifier.predict([a1,a2, bpm_data])
         probabilities1 = classifier.predict([a1,a2, bpm_data])
     except ValueError:
         return scored_labels, np.array([1]), np.array([0.6])
 
     row_index = np.sum(probabilities1,axis=0).argmax()
     probabilities2 = np.sum(probabilities1,axis=0) / np.sum(probabilities1,axis=0)[row_index]
+<<<<<<< Updated upstream
     probabilities3 = np.round(probabilities2,3)
     label1[label1 > 0.5] = 1
     label1[label1 <= 0.5] = 0
@@ -241,6 +242,14 @@ def run_model2(model, header, recording):
     a = np.zeros(27)
     a[np.argwhere(label1 == np.amax(label1))] = 1
     a1 = np.asarray(a, dtype=int)
+=======
+    # label1[label1 > 0.5] = 1
+    # label1[label1 <= 0.5] = 0
+    a = np.zeros(24)
+    a[np.argwhere(probabilities2 > 0.6)] = 1
+    label1, probabilities3 = convert_to_real_labels(a, np.round(probabilities2, 3))
+    a1 = np.asarray(label1, dtype=int)
+>>>>>>> Stashed changes
 
     return scored_labels, a1, probabilities3
 
