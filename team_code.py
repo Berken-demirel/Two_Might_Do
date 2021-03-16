@@ -51,9 +51,15 @@ def training_code(data_directory, model_directory):
                      '164947007', '111975006', '164917005', '47665007', '59118001', '427393009',
                      '426177001', '426783006', '427084000', '63593006', '164934002', '59931005', '17338001']
 
+    my_scored_labels = ['270492004', '164889003', '164890007', '426627000', '713427006', '713426002', '445118002',
+                     '39732003',
+                     '164909002', '251146004', '698252002', '10370003', '284470004', '427172004',
+                     '164947007', '111975006', '164917005', '47665007', '427393009',
+                     '426177001', '426783006', '427084000', '164934002', '59931005']
+
     # dict that maps labels to integers, and the reverse
     labels_map = {scored_labels[i]: i for i in range(len(scored_labels))}
-    inv_labels_map = {i: scored_labels[i] for i in range(len(scored_labels))}
+    my_labels = {my_scored_labels[i]: i for i in range(len(my_scored_labels))}
 
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
@@ -68,7 +74,7 @@ def training_code(data_directory, model_directory):
         true_labels = list(set(scored_labels) & set(current_labels))
         if len(true_labels) != 0:
             processed_1, bpm_feat = get_features_2(header, recording, ['II', 'V5'])
-            encoded_label = one_hot_encode(true_labels, labels_map)
+            encoded_label = one_hot_encode(true_labels, labels_map, my_labels)
             for x in range(len(processed_1)):
                 if len(processed_1[x]) == 550:
                     training_list.append(processed_1[x])
@@ -99,10 +105,13 @@ def training_code(data_directory, model_directory):
 
     x_train, x_val, y_train, y_val = train_test_split(Xtrain, labels, stratify=labels, test_size=0.2, random_state=1)
 
-    Xtrain_1 = x_train[:, 0:275]
+
+    Xtrain_II = x_train[:, 0:275]
+    Xtrain_V5 = x_train[:, 275:550]
     bpm_data_train = x_train[:, 550:]
 
-    Xtrain_2 = x_val[:, 0:275]
+    xval_II = x_val[:, 0:275]
+    xval_V5 = x_val[:, 275:550]
     bpm_data_val = x_val[:, 550:]
 
     sum_26 = np.sum(y_train, axis=0)
@@ -123,21 +132,16 @@ def training_code(data_directory, model_directory):
     where_am_I = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_f1_score', factor=0.1, patience=75, verbose=1,
                                                       mode='max', min_delta=0.001, cooldown=0, min_lr=0)
 
-    history = model.fit(x=[Xtrain_1, bpm_data_train], y=y_train, epochs=1, batch_size=250, verbose=1,
-                        validation_data=([Xtrain_2, bpm_data_val], y_val),
+    history = model.fit(x=[Xtrain_II, bpm_data_train], y=y_train, epochs=1, batch_size=250, verbose=1,
+                        validation_data=([xval_II, bpm_data_val], y_val),
                         class_weight=class_weights, callbacks=[model_checkpoint_callback, stop_me, where_am_I])
 
     model2 = define_model2()
 
-    Xtrain_1 = x_train[:, 0:500]
-    bpm_data_train = x_train[:, 500:]
 
-    Xtrain_2 = x_val[:, 0:250]
-    bpm_data_val = x_val[:, 250:]
+    history2 = model2.fit(x=[Xtrain_II, Xtrain_V5, bpm_data_train], y=y_train, epochs=900, batch_size=250, verbose=1,
+                         validation_data=([xval_II, xval_V5, bpm_data_val], y_val), class_weight=class_weights, callbacks=[model_checkpoint_callback, stop_me, where_am_I])
 
-    history2 = model2.fit(x=[Xtrain_1, bpm_data_train], y=y_train, epochs=1, batch_size=250, verbose=1,
-                        validation_data=([Xtrain_2, bpm_data_val], y_val),
-                        class_weight=class_weights, callbacks=[model_checkpoint_callback, stop_me, where_am_I])
 
     filename1 = os.path.join(model_directory,others)
     filename2 = os.path.join(model_directory, two_lead_model_filename)
@@ -161,7 +165,7 @@ def save_model(filename, classes, leads, imputer, classifier):
 # Load your trained 12-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
 def load_twelve_lead_model(model_directory):
     filename = os.path.join(model_directory, others)
-    return load_model(filename)
+    return load_model_2(filename)
 
 # Load your trained 6-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
 def load_six_lead_model(model_directory):
@@ -193,7 +197,7 @@ def load_model_2(filename):
 
 # Run your trained 12-lead ECG model. This function is **required**. Do **not** change the arguments of this function.
 def run_twelve_lead_model(model, header, recording):
-    return run_model(model, header, recording)
+    return run_model2(model, header, recording)
 
 # Run your trained 6-lead ECG model. This function is **required**. Do **not** change the arguments of this function.
 def run_six_lead_model(model, header, recording):
@@ -227,20 +231,16 @@ def run_model2(model, header, recording):
     a1 = a[:,0:275]
     a2 = a[:,275:]
     try:
-        label1 = classifier.predict([a1,a2, bpm_data])
         probabilities1 = classifier.predict([a1,a2, bpm_data])
     except ValueError:
         return scored_labels, np.array([1]), np.array([0.6])
 
     row_index = np.sum(probabilities1,axis=0).argmax()
     probabilities2 = np.sum(probabilities1,axis=0) / np.sum(probabilities1,axis=0)[row_index]
-    probabilities3 = np.round(probabilities2,3)
-    label1[label1 > 0.5] = 1
-    label1[label1 <= 0.5] = 0
-    label1 = np.sum(label1,axis=0)
-    a = np.zeros(27)
-    a[np.argwhere(label1 == np.amax(label1))] = 1
-    a1 = np.asarray(a, dtype=int)
+    a = np.zeros(24)
+    a[np.argwhere(probabilities2 > 0.25)] = 1
+    label1, probabilities3 = convert_to_real_labels(a, np.round(probabilities2, 3))
+    a1 = np.asarray(label1, dtype=int)
 
     return scored_labels, a1, probabilities3
 
@@ -253,28 +253,22 @@ def run_model(model, header, recording):
     leads = ['II']
     classifier = model
 
-    # Load features.
-    num_leads = len(leads)
     splitted, bpm_features = get_features(header, recording, leads)
     bpm_data = np.zeros((len(splitted), 6))
     for i in range(len(splitted)):
         bpm_data[i, :] = bpm_features[0:6]
 
     try:
-        label1 = classifier.predict([splitted.reshape(len(splitted), 300, 1), bpm_data])
-        probabilities1 = classifier.predict([splitted.reshape(len(splitted), 300, 1), bpm_data])
+        probabilities1 = classifier.predict([splitted.reshape(len(splitted), 275, 1), bpm_data])
     except ValueError:
         return scored_labels, np.array([1]), np.array([0.6])
 
-    row_index = math.floor(probabilities1.argmax()/len(probabilities1[0]))
-    probabilities2 = probabilities1[row_index]
-    probabilities3 = np.round(probabilities2,3)
-    label1[label1 > 0.5] = 1
-    label1[label1 <= 0.5] = 0
-    label1 = np.sum(label1,axis=0)
-    a = np.zeros(27)
-    a[np.argwhere(label1 == np.amax(label1))] = 1
-    a1 = np.asarray(a, dtype=int)
+    row_index = np.sum(probabilities1,axis=0).argmax()
+    probabilities2 = np.sum(probabilities1,axis=0) / np.sum(probabilities1,axis=0)[row_index]
+    a = np.zeros(24)
+    a[np.argwhere(probabilities2 > 0.25)] = 1
+    label1, probabilities3 = convert_to_real_labels(a, np.round(probabilities2, 3))
+    a1 = np.asarray(label1, dtype=int)
 
     return scored_labels, a1, probabilities3
 
@@ -296,22 +290,34 @@ def butter_bandpass_filter(data,freq):
     y = sosfiltfilt(sos, data)
     return y
 
-def one_hot_encode(tags, mapping):
-    # create empty vector
-    encoding = np.zeros(len(mapping), dtype='uint8')
-    # mark 1 for each tag in the vector
+def one_hot_encode(tags, mapping, my_labels):
+    my_encoding = np.zeros(len(my_labels), dtype='uint8')
     for tag in tags:
-        encoding[mapping[tag]] = 1
-    return encoding
+        if '59118001' in tag:
+            tag = '713427006'
+        if '63593006' in tag:
+            tag = '284470004'
+        if '17338001' in tag:
+            tag = '427172004'
+        my_encoding[my_labels[tag]] = 1
+    return my_encoding
 
-
-def inception_module_1(layer_in):
-    conv1 = Conv1D(16, 1, padding='same', activation='relu', kernel_initializer='GlorotNormal',
-                   kernel_regularizer=l2(0.0002))(layer_in)
-    conv4 = Conv1D(16, 4, padding='same', activation='relu', kernel_initializer='GlorotNormal',
-                   kernel_regularizer=l2(0.0002))(layer_in)
-    layer_out = concatenate([conv1, conv4], axis=-1)
-    return layer_out
+def convert_to_real_labels(labels, probs):
+    probs_to_return = np.zeros(27)
+    labels_to_return = np.zeros(27)
+    probs_to_return[0:18] = probs[0:18]
+    labels_to_return[0:18] = labels[0:18]
+    probs_to_return[18] = probs[4]
+    labels_to_return[18] = labels[4]
+    probs_to_return[19:23] = probs[18:22]
+    labels_to_return[19:23] = labels[18:22]
+    probs_to_return[23] = probs[12]
+    labels_to_return[23] = labels[12]
+    probs_to_return[24:26] = probs[22:24]
+    labels_to_return[24:26] = labels[22:24]
+    probs_to_return[26] = probs[13]
+    labels_to_return[26] = labels[13]
+    return labels_to_return, probs_to_return
 
 def assign_weigths(sums):
     if np.count_nonzero(sums) != 27:
@@ -322,6 +328,41 @@ def assign_weigths(sums):
     for i in range(len(sums)):
         weights_dict.__setitem__(i, sums_div[i] / 27)
     return weights_dict
+
+
+def define_model(in_shape=(300, 1), out_shape=24):
+    inputA = Input(shape=(275,1))
+    inputB = Input(shape=(6,1))
+    Dense_bpm = bpm_dense(inputB)
+    layer_out = Conv1D(32, 8, activation='relu', kernel_initializer='GlorotNormal', padding='same', kernel_regularizer=l2(0.0002))(inputA)
+    Batch1 = BatchNormalization()(layer_out)
+    layer_out_0 = res_net_block_trans(Batch1, 32, 8)
+    layer_out_1 = res_net_block_trans(layer_out_0, 64, 4)
+    Pool1 = AveragePooling1D(2, padding='same')(layer_out_1)
+    Incept_1 = inception_module_1(Pool1)
+    res2 = res_net_block_trans(Incept_1, 64, 2)
+    Pool1 = AveragePooling1D(2, padding='same')(res2)
+    flat_1 = Flatten()(Pool1)
+    Dense_1 = Dense(128, activation='relu', kernel_initializer='GlorotNormal')(flat_1)
+    layer_out = concatenate([Dense_bpm, Dense_1])
+    Dropout1 = Dropout(0.4)(layer_out)
+    out = Dense(out_shape, activation='sigmoid')(Dropout1)
+    BerkenLeNet = Model(inputs=[inputA, inputB], outputs=out)
+    BerkenLeNet.summary()
+    # compile model
+    opt = Adam(learning_rate=0.0003)
+    BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['accuracy', 'Recall',tfa.metrics.F1Score(num_classes=24,threshold=0.5,average='macro')])
+    return BerkenLeNet
+
+
+def inception_module_1(layer_in):
+    conv1 = Conv1D(32, 4, padding='same', activation='relu', kernel_initializer='GlorotNormal',
+                   kernel_regularizer=l2(0.0002))(layer_in)
+    conv4 = Conv1D(32, 16, padding='same', activation='relu', kernel_initializer='GlorotNormal',
+                   kernel_regularizer=l2(0.0002))(layer_in)
+    layer_out = concatenate([conv1, conv4], axis=-1)
+    x3 = BatchNormalization()(layer_out)
+    return x3
 
 
 def res_net_block1(input_data, filters, conv_size):
@@ -344,6 +385,7 @@ def res_net_block_trans(input_data, filters, conv_size):
     x = Activation('relu')(x4)
     return x
 
+
 def bpm_dense(bpm_input):
     flat = Flatten()(bpm_input)
     Dense_bpm1 = Dense(8, activation="relu")(flat)
@@ -351,51 +393,56 @@ def bpm_dense(bpm_input):
     Dense_bpm3 = Dense(32, activation="relu")(Dense_bpm2)
     return Dense_bpm3
 
-def define_model(in_shape=(300, 1), out_shape=27):
-    inputA = Input(shape=(300,1))
-    inputB = Input(shape=(6,1))
-    Dense_bpm = bpm_dense(inputB)
-    layer_out = Conv1D(32, 8, activation='relu', kernel_initializer='GlorotNormal', padding='same',kernel_regularizer=l2(0.0002))(inputA)
-    Batch1 = BatchNormalization()(layer_out)
-    layer_out_0 = res_net_block1(Batch1, 32, 4)
-    Pool1 = AveragePooling1D(2, padding='same')(layer_out_0)
-    res2 = res_net_block_trans(Pool1, 64, 2)
-    Pool2 = AveragePooling1D(2, padding='same')(res2)
-    flat_1 = Flatten()(Pool2)
-    Dense_1 = Dense(128, activation='relu', kernel_initializer='GlorotNormal')(flat_1)
-    layer_out = concatenate([Dense_bpm, Dense_1])
-    Dropout1 = Dropout(0.4)(layer_out)
-    out = Dense(out_shape, activation='sigmoid')(Dropout1)
-    BerkenLeNet = Model(inputs=[inputA, inputB], outputs=out)
-    BerkenLeNet.summary()
-    # compile model
-    opt = Adam(learning_rate=0.0003)
-    BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['accuracy', 'Recall',tfa.metrics.F1Score(num_classes=27,threshold=0.5,average='macro')])
-    return BerkenLeNet
 
-def define_model2(in_shape=(600, 1), out_shape=27):
-    inputA = Input(shape=(600,1))
-    inputB = Input(shape=(6,1))
-    Dense_bpm = bpm_dense(inputB)
-    layer_out = Conv1D(32, 8, activation='relu', kernel_initializer='GlorotNormal', padding='same',kernel_regularizer=l2(0.0002))(inputA)
+def Lead_II_way(lead_II):
+    layer_out = Conv1D(32, 8, activation='relu', kernel_initializer='GlorotNormal', padding='same',
+                       kernel_regularizer=l2(0.0002))(lead_II)
     Batch1 = BatchNormalization()(layer_out)
-    layer_out_0 = res_net_block_trans(Batch1, 32, 4)
-    Pool1 = AveragePooling1D(2, padding='same')(layer_out_0)
+    layer_out_0 = res_net_block_trans(Batch1, 32, 8)
+    layer_out_1 = res_net_block_trans(layer_out_0, 64, 4)
+    Pool1 = AveragePooling1D(2, padding='same')(layer_out_1)
     Incept_1 = inception_module_1(Pool1)
     res2 = res_net_block_trans(Incept_1, 64, 2)
-    res3 = res_net_block_trans(res2, 64, 2)
-    Pool2 = AveragePooling1D(2, padding='same')(res3)
-    flat_1 = Flatten()(Pool2)
-    Dense_1 = Dense(128, activation='relu', kernel_initializer='GlorotNormal')(flat_1)
+    Pool1 = AveragePooling1D(2, padding='same')(res2)
+    # flat = Flatten()(Pool1)
+    return Pool1
+
+
+def Lead_V5_way(lead_V5):
+    layer_out = Conv1D(32, 8, activation='relu', kernel_initializer='GlorotNormal', padding='same',
+                       kernel_regularizer=l2(0.0002))(lead_V5)
+    Batch1 = BatchNormalization()(layer_out)
+    layer_out_0 = res_net_block_trans(Batch1, 32, 8)
+    layer_out_1 = res_net_block_trans(layer_out_0, 64, 4)
+    Pool1 = AveragePooling1D(2, padding='same')(layer_out_1)
+    Incept_1 = inception_module_1(Pool1)
+    res2 = res_net_block_trans(Incept_1, 64, 2)
+    Pool1 = AveragePooling1D(2, padding='same')(res2)
+    # flat = Flatten()(Pool1)
+    return Pool1
+
+
+def define_model2(in_shape=(600, 1), out_shape=24):
+    input_II = Input(shape=(275, 1))
+    input_V5 = Input(shape=(275, 1))
+    input_bpm = Input(shape=(6, 1))
+    Dense_bpm = bpm_dense(input_bpm)
+    out_II = Lead_II_way(input_II)
+    out_V5 = Lead_V5_way(input_V5)
+    layer_out = concatenate([out_II, out_V5], axis=-1)
+    sep1 = SeparableConv1D(128, 4, activation='relu', kernel_initializer='GlorotNormal', padding='same',
+                           kernel_regularizer=l2(0.0002))(layer_out)
+    flat = Flatten()(sep1)
+    Dense_1 = Dense(128, activation='relu')(flat)
     layer_out = concatenate([Dense_bpm, Dense_1])
     Dropout1 = Dropout(0.4)(layer_out)
     out = Dense(out_shape, activation='sigmoid')(Dropout1)
-    BerkenLeNet = Model(inputs=[inputA, inputB], outputs=out)
+    BerkenLeNet = Model(inputs=[input_II, input_V5, input_bpm], outputs=out)
     BerkenLeNet.summary()
     # compile model
     opt = Adam(learning_rate=0.0003)
-    #opt = SGD(lr=0.01, momentum=0.9, nesterov=False)
-    BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['Recall', 'accuracy',tfa.metrics.F1Score(num_classes=27, threshold=0.5, average='macro')])
+    # opt = SGD(lr=0.01, momentum=0.9, nesterov=False)
+    BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['Recall', 'accuracy', tfa.metrics.F1Score(num_classes=24, threshold=0.5, average='macro')])
     return BerkenLeNet
 
 def get_correlated_ones(templates):
@@ -436,25 +483,34 @@ def get_features(header, recording, leads):
     amplitudes = get_gains(header, leads)
     baselines = get_baselines(header, leads)
     num_leads = len(leads)
+    num_samples = get_num_samples(header)
     for i in range(num_leads):
         recording[i, :] = amplitudes[i] * recording[i, :] - baselines[i]
+    if freq < 500 and num_samples > 20000:
+        recording = recording[0:2, 1:16000]
     features = ecg.ecg(recording[0],sampling_rate=freq, show=False)
-    r_peaks = ecg.extract_heartbeats(signal=recording[0], rpeaks=features['rpeaks'], sampling_rate=freq, before=0.25, after=0.35)
+    bpm_features = get_bpm_feature(features['rpeaks'], freq)
+
+    if bpm_features[0] > 180:
+        r_peaks_1 = ecg.extract_heartbeats(signal=recording[0], rpeaks=features['rpeaks'], sampling_rate=freq, before=0.2, after=0.2)
+    else:
+        r_peaks_1 = ecg.extract_heartbeats(signal=recording[0], rpeaks=features['rpeaks'], sampling_rate=freq, before=0.25, after=0.3)
+
     try:
         bpm_features = get_bpm_feature(features['rpeaks'], freq)
     except ValueError:
         bpm_features = np.zeros((1,6))
 
-    templates = r_peaks['templates']
+    templates = r_peaks_1['templates']
     df = pd.DataFrame(templates.transpose())
     a = df.corr(method='pearson')
     a1 = a.sum(axis=1)
     a1 = a1 / a1[a1.argmax()]
     df = df.drop(df.columns[a1[a1<0.8].index.tolist() ], axis=1, inplace=False)
     templates = df.to_numpy().transpose()
-    if freq != 500:
-        index = int(freq * 0.6)
-        templates = templates[:, 0:index:2]
+    if freq != 500 or len(templates[0]) != 275:
+        templates = signal.resample(templates, 275, axis=-1)
+
     try:
         output1 = preprocessing.normalize(templates, norm="l2", axis=1)
     except ValueError:
