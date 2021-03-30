@@ -1,6 +1,6 @@
 from keras.models import Sequential
-from matplotlib import pyplot  # To be deleted
-from sklearn.model_selection import train_test_split  # To be deleted
+from matplotlib import pyplot 
+from sklearn.model_selection import train_test_split  
 from scipy import signal
 import pandas as pd
 import tensorflow as tf
@@ -79,8 +79,7 @@ def Lead_II_way(lead_II):
     Pool1 = AveragePooling1D(2, padding='same')(layer_out_1)
     Incept_1 = inception_module_1(Pool1)
     res2 = res_net_block_trans(Incept_1, 64, 4)
-    res3 = res_net_block_trans(res2, 128, 2)
-    Pool1 = AveragePooling1D(2, padding='same')(res3)
+    Pool1 = AveragePooling1D(2, padding='same')(res2)
     #flat = Flatten()(Pool1)
     return Pool1
 
@@ -92,21 +91,21 @@ def Lead_V5_way(lead_V5):
     Pool1 = AveragePooling1D(2, padding='same')(layer_out_1)
     Incept_1 = inception_module_1(Pool1)
     res2 = res_net_block_trans(Incept_1, 64, 4)
-    res3 = res_net_block_trans(res2, 128, 2)
-    Pool1 = AveragePooling1D(2, padding='same')(res3)
+    Pool1 = AveragePooling1D(2, padding='same')(res2)
     #Pool1 = signal.decimate(res2, 2)
     #flat = Flatten()(Pool1)
     return Pool1
 
 def define_model(in_shape=(600, 1), out_shape=24):
-    input_II = Input(shape=(275,1))
-    input_V5 = Input(shape=(275,1))
-    input_bpm = Input(shape=(6,1))
+    input_II = Input(shape=(275, 1))
+    input_V5 = Input(shape=(275, 1))
+    input_bpm = Input(shape=(6, 1))
     Dense_bpm = bpm_dense(input_bpm)
     out_II = Lead_II_way(input_II)
     out_V5 = Lead_V5_way(input_V5)
     layer_out = concatenate([out_II, out_V5], axis=-1)
-    sep1 = SeparableConv1D(128, 4, activation='relu', kernel_initializer='GlorotNormal', padding='same',kernel_regularizer=l2(0.0002))(layer_out)
+    sep1 = SeparableConv1D(128, 4, activation='relu', kernel_initializer='GlorotNormal', padding='same',
+                           kernel_regularizer=l2(0.0002))(layer_out)
     flat = Flatten()(sep1)
     Dense_1 = Dense(128, activation='relu')(flat)
     layer_out = concatenate([Dense_bpm, Dense_1])
@@ -116,11 +115,8 @@ def define_model(in_shape=(600, 1), out_shape=24):
     BerkenLeNet.summary()
     # compile model
     opt = Adam(learning_rate=0.0003)
-    #opt = SGD(lr=0.01, momentum=0.9, nesterov=False)
-    BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['Recall', 'accuracy',
-                                                                            tfa.metrics.F1Score(num_classes=24,
-                                                                                                threshold=0.5,
-                                                                                                average='macro')])
+    # opt = SGD(lr=0.01, momentum=0.9, nesterov=False)
+    BerkenLeNet.compile(optimizer=opt, loss='binary_crossentropy', metrics=['Recall', 'accuracy', tfa.metrics.F1Score(num_classes=24, threshold=0.5, average='macro')])
     return BerkenLeNet
 
 
@@ -148,7 +144,7 @@ class_weights = assign_weigths(sum_26)
 
 model = define_model()
 
-checkpoint_filepath = 'Checkpoints_increased_params_v4'
+checkpoint_filepath = 'Checkpoints_increased_params_v4_dept1'
 model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_filepath, save_weights_only=False,
                                                                monitor='val_f1_score', mode='max', save_best_only=True)
 
@@ -161,6 +157,6 @@ where_am_I = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_f1_score', factor
 history = model.fit(x=[Xtrain_II, Xtrain_V5, bpm_data_train], y=y_train, epochs=900, batch_size=250, verbose=1, validation_data=([xval_II, xval_V5, bpm_data_val], y_val), class_weight=class_weights, callbacks=[model_checkpoint_callback, stop_me, where_am_I])
 
 hist_df = pd.DataFrame(history.history)
-pd.DataFrame.from_dict(history.history).to_csv('increased_params_v4.csv', index=False)
+pd.DataFrame.from_dict(history.history).to_csv('increased_params_v4_dept1.csv', index=False)
     
 model.save(checkpoint_filepath)
